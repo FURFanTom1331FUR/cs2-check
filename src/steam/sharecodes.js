@@ -47,15 +47,20 @@ export async function fetchNextCode({ key, steamid, authCode, knownCode, fetchIm
     throw new ShareCodeError(/key=/.test(text) ? "server_key" : "bad_auth_code", res.status);
   }
   if (res.status === 412) throw new ShareCodeError("bad_known_code", 412);
-  if (res.status === 429) throw new ShareCodeError("rate_limited", 429);
-  if (res.status !== 200 && res.status !== 202) throw new ShareCodeError("unavailable", res.status);
+  // 429 и 503 — лимиты Steam (503 бывает после серии неверных кодов аутентификации).
+  if (res.status === 429 || res.status === 503) throw new ShareCodeError("rate_limited", res.status);
+  // По документации Valve: 202 Accepted + {"result":{"nextcode":"n/a"}} — известный код последний, новых матчей нет.
+  if (res.status === 202) return null;
+  if (res.status !== 200) throw new ShareCodeError("unavailable", res.status); // 500, 504 и прочее
   let next;
   try {
     next = JSON.parse(text)?.result?.nextcode;
   } catch {
     throw new ShareCodeError("unavailable", res.status);
   }
-  if (res.status === 202 || !next || next === "n/a") return null;
+  if (next === "n/a") return null;
+  // 200 без кода — не «нет матчей», а непонятный ответ: сообщаем как ошибку Steam.
+  if (typeof next !== "string" || !next) throw new ShareCodeError("unavailable", res.status);
   const code = normalizeShareCode(next);
   if (!code) throw new ShareCodeError("unavailable", res.status);
   return code;
@@ -89,6 +94,7 @@ export async function walkShareCodes({ key, steamid, authCode, knownCode, max = 
     matches: codes.map((c) => decodeShareCode(c)),
     newestCode: current,
     finished, // true — дошли до последнего матча
+    noNewer: finished && codes.length === 0, // Steam сразу ответил «n/a»: после введённого кода матчей нет
     hasMore: !finished && !warning && codes.length >= limit,
     warning,
   };

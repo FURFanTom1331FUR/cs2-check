@@ -77,12 +77,16 @@ test("цепочка: новые матчи до «n/a»", async () => {
   assert.equal(calls.length, 4);
 });
 
-test("цепочка: нет новых матчей", async () => {
-  const { fetchImpl } = fakeSteam(() => [202, { result: { nextcode: "n/a" } }]);
-  const r = await walkShareCodes({ ...base, knownCode: chain[0], fetchImpl });
-  assert.equal(r.matches.length, 0);
-  assert.equal(r.newestCode, chain[0]);
-  assert.equal(r.finished, true);
+test("цепочка: нет новых матчей (202 + n/a, как в документации Valve)", async () => {
+  for (const resp of [[202, { result: { nextcode: "n/a" } }], [202, ""], [200, { result: { nextcode: "n/a" } }]]) {
+    const { fetchImpl } = fakeSteam(() => resp);
+    const r = await walkShareCodes({ ...base, knownCode: chain[0], fetchImpl });
+    assert.equal(r.matches.length, 0);
+    assert.equal(r.newestCode, chain[0]);
+    assert.equal(r.finished, true);
+    assert.equal(r.noNewer, true);
+    assert.equal(r.warning, null);
+  }
 });
 
 test("цепочка: лимит шагов", async () => {
@@ -99,6 +103,10 @@ test("цепочка: ошибки Steam", async () => {
     [[403, "<html><body>Access is denied. Please verify your <pre>key=</pre> parameter.</body></html>"], "server_key"],
     [[412, ""], "bad_known_code"],
     [[429, ""], "rate_limited"],
+    [[503, ""], "rate_limited"],
+    [[504, ""], "unavailable"],
+    [[200, {}], "unavailable"],
+    [[200, { result: {} }], "unavailable"],
     [[500, ""], "unavailable"],
     [[200, "not json"], "unavailable"],
     [[200, { result: { nextcode: "garbage" } }], "unavailable"],

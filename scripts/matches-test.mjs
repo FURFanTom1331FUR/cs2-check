@@ -79,6 +79,22 @@ await p.click("#player .btn.ghost");
 console.log("6. after forget:", await p.evaluate(() => localStorage.getItem("cs2check.matches.v1")), await p.$$eval(".mitem", (e) => e.length));
 await p.setViewportSize({ width: 1360, height: 900 });
 
+// 6b. Steam сразу ответил «n/a» (введён самый новый код) → введённый матч в списке + понятное объяснение.
+await p.route("**/api/matches", async (route) => {
+  const b = JSON.parse(route.request().postData());
+  await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, knownCode: b.knownCode, player: { steamid: "76561197960435530", name: "Robin Walker", avatar: "" }, matches: [], newestCode: b.knownCode, finished: true, noNewer: true, hasMore: false, warning: null }) });
+});
+await p.fill("#q", "76561197960435530"); await p.fill("#auth", "AAAA-AAAAA-AAAA"); await p.fill("#known", CODES[2]);
+await p.click("#go");
+await p.waitForSelector(".mitem");
+console.log("6b. n/a:", await p.$$eval("#status .alert h3", (e) => e.map((x) => x.innerText)), "| items:", await p.$$eval(".mitem", (e) => e.length),
+  "| badge:", await p.$eval(".mitem .badge.entered", (e) => e.innerText), "| demo btn:", await p.$eval(".mitem .btn.ghost", (e) => e.innerText));
+await p.evaluate(() => scrollTo(0, 0));
+await shot("no-newer");
+await p.unroute("**/api/matches");
+p.once("dialog", (d) => d.accept());
+await p.click("#player .btn.ghost");
+
 // 7. Демка по ссылке через прокси /api/replay (ответ Valve подменён локальным .dem.bz2).
 const DEMO = "http://replay183.valve.net/730/003712345678901234567_1234567890.dem.bz2";
 await p.goto(base + "/matches", { waitUntil: "networkidle" });

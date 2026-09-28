@@ -90,17 +90,26 @@ async function search({ continueFrom } = {}) {
   const known = new Set(history.map((m) => m.code));
   const now = new Date().toISOString();
   const add = (m) => { if (!known.has(m.code)) { history.push({ ...m, foundAt: now }); known.add(m.code); } };
-  add(decodeShareCode(data.knownCode)); // исходный код — тоже ваш матч
+  // Введённый код — тоже ваш матч: он всегда в списке (первым в цепочке) с кнопкой «Получить демку».
+  if (!continueFrom) state.enteredCode = data.knownCode;
+  add(decodeShareCode(data.knownCode));
   const fresh = new Set(data.matches.map((m) => m.code));
   data.matches.forEach(add);
+  // matchId у Valve растёт со временем — сортируем по нему, чтобы порядок не зависел от порядка поисков.
+  history.sort((a, b) => (BigInt(a.matchId) < BigInt(b.matchId) ? -1 : BigInt(a.matchId) > BigInt(b.matchId) ? 1 : 0));
   state.history = history.slice(-MAX_HISTORY);
   state.lastCode = data.newestCode;
   knownIn.value = data.newestCode;
   persist();
 
   const msgs = [];
-  if (data.matches.length) msgs.push(alertBox("ok", `Найдено новых матчей: ${data.matches.length}`, data.finished ? "Это все новые матчи на данный момент." : null));
-  else msgs.push(alertBox("warn", "Новых матчей нет", "После указанного кода вы ещё не сыграли официальных матчей (или Steam пока их не выдал — это бывает через несколько минут после игры)."));
+  if (data.matches.length) {
+    msgs.push(alertBox("ok", `Найдено новых матчей: ${data.matches.length}`, data.finished ? "Это все матчи после введённого кода на данный момент." : null));
+  } else if (data.noNewer) {
+    msgs.push(alertBox("warn", "Новых матчей после этого кода нет",
+      "Steam выдаёт только матчи, сыгранные ПОСЛЕ введённого кода, а после него матчей пока нет. Сам введённый матч показан в списке ниже — для него можно получить демку.",
+      h("p", {}, "Чтобы увидеть более старые матчи, скопируйте в CS2 («Смотреть» → «Ваши матчи») код самого старого нужного матча и вставьте его в поле «Код матча». Если матч сыгран только что, Steam выдаёт его код через несколько минут.")));
+  }
   if (data.warning) msgs.push(alertBox("warn", "Найдены не все матчи", WARNINGS[data.warning] || WARNINGS.unavailable));
   if (data.hasMore) msgs.push(alertBox("warn", "Есть ещё матчи", "За один раз ищем не больше 20.", h("p", {}, h("button", { type: "button", class: "btn ghost", onclick: () => search({ continueFrom: data.newestCode }) }, "Искать дальше"))));
   status.replaceChildren(...msgs);
@@ -118,25 +127,26 @@ function render(fresh = new Set()) {
       h("button", { type: "button", class: "btn ghost", onclick: forget, title: "Удалить коды и историю из этого браузера" }, "Забыть данные"),
     ].filter(Boolean));
   }
-  const items = [...(state.history || [])].reverse(); // новые сверху
+  const items = state.history || []; // по порядку: от старых (введённый код) к новым
   listBox.hidden = !items.length;
   if (!items.length) return listBox.replaceChildren();
   listBox.replaceChildren(
-    h("h2", {}, h("span", {}, `Матчи (${items.length})`), h("span", { class: "muted" }, "новые сверху")),
-    ...items.map((m, i) => matchItem(m, items.length - i, fresh.has(m.code))),
+    h("h2", {}, h("span", {}, `Матчи (${items.length})`), h("span", { class: "muted" }, "от старых к новым")),
+    ...items.map((m, i) => matchItem(m, i + 1, fresh.has(m.code), m.code === state.enteredCode)),
   );
 }
 
-function matchItem(m, num, isNew) {
+function matchItem(m, num, isNew, isEntered) {
   const msg = h("div", { class: "mitem-msg" });
   const btnDemo = h("button", { type: "button", class: "btn ghost", onclick: () => getDemo(m, msg, btnDemo) }, "Получить демку");
   const copy = h("button", { type: "button", class: "chip", onclick: async () => { try { await navigator.clipboard.writeText(m.code); copy.textContent = "Скопировано"; setTimeout(() => (copy.textContent = "Копировать код"), 1500); } catch {} } }, "Копировать код");
   const ageDays = m.foundAt ? (Date.now() - Date.parse(m.foundAt)) / 864e5 : 0;
   if (m.demoUrl) showDemoLink(m, msg);
-  return h("article", { class: `mitem${isNew ? " new" : ""}` },
+  return h("article", { class: `mitem${isNew ? " new" : ""}${isEntered ? " entered" : ""}` },
     h("div", { class: "mitem-top" },
       h("span", { class: "num" }, `#${num}`),
       h("code", {}, m.code),
+      isEntered ? h("span", { class: "badge entered", title: "Этот код вы ввели сами; Steam ищет матчи после него" }, "введённый матч") : null,
       isNew ? h("span", { class: "badge" }, "новый") : null,
       ageDays > 28 ? h("span", { class: "badge muted", title: "Valve хранит демки около месяца" }, "демка, скорее всего, удалена") : null),
     h("div", { class: "mitem-ids" },

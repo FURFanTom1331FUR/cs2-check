@@ -297,3 +297,6 @@ table.sb { width: 100%; border-collapse: collapse; font-variant-numeric: tabular
 .search.small { margin: 14px 0 0; max-width: none; }
 .search.small button { padding: 0 16px; font-size: 14px; }
 @media (max-width: 560px) { .mform-row .btn { width: 100%; } }
+.field .hint { font-size: 12px; color: var(--muted); line-height: 1.4; }
+.badge.entered { background: rgba(106, 168, 255, .14); color: var(--info); }
+.mitem.entered { border-color: rgba(106, 168, 255, .45); }
