@@ -1,0 +1,3 @@
+# Скопируйте в .dev.vars и вставьте свой ключ: https://steamcommunity.com/dev/apikey
+# Файл .dev.vars в git не попадает.
+STEAM_API_KEY=
