@@ -1,0 +1,72 @@
+diff --git a/src/parser/src/parse_demo.rs b/src/parser/src/parse_demo.rs
+index 314f423..86ff938 100644
+--- a/src/parser/src/parse_demo.rs
++++ b/src/parser/src/parse_demo.rs
+@@ -21,6 +21,17 @@ use std::sync::mpsc::{channel, Receiver};
+ use std::thread;
+ use std::time::Duration;
+ 
++// wasm32-unknown-unknown не поддерживает std::time::Instant (паника) — заглушка для профилировщика.
++#[cfg(target_arch = "wasm32")]
++struct ProfInstant;
++#[cfg(target_arch = "wasm32")]
++impl ProfInstant {
++    fn now() -> Self { ProfInstant }
++    fn elapsed(&self) -> std::time::Duration { std::time::Duration::ZERO }
++}
++#[cfg(not(target_arch = "wasm32"))]
++use std::time::Instant as ProfInstant;
++
+ pub const HEADER_ENDS_AT_BYTE: usize = 16;
+ 
+ #[derive(Debug)]
+@@ -65,7 +76,7 @@ impl<'a> Parser<'a> {
+     }
+     pub fn parse_demo(&mut self, demo_bytes: &[u8]) -> Result<DemoOutput, DemoParserError> {
+         let _prof = std::env::var("CS2_PROF").is_ok();
+-        let _t = std::time::Instant::now();
++        let _t = ProfInstant::now();
+         let mut first_pass_parser = FirstPassParser::new(&self.input);
+         let first_pass_output = first_pass_parser.parse_demo(demo_bytes, false)?;
+         if _prof {
+@@ -132,14 +143,14 @@ impl<'a> Parser<'a> {
+     }
+     fn second_pass_single_threaded(&self, outer_bytes: &[u8], first_pass_output: FirstPassOutput) -> Result<DemoOutput, DemoParserError> {
+         let prof = std::env::var("CS2_PROF").is_ok();
+-        let mut t = std::time::Instant::now();
++        let mut t = ProfInstant::now();
+         let mut parser = SecondPassParser::new(first_pass_output.clone(), 16, true, None)?;
+         parser.start(outer_bytes)?;
+-        if prof { eprintln!("[prof] second_pass start(): {:.3}s", t.elapsed().as_secs_f64()); t = std::time::Instant::now(); }
++        if prof { eprintln!("[prof] second_pass start(): {:.3}s", t.elapsed().as_secs_f64()); t = ProfInstant::now(); }
+         let second_pass_output = parser.create_output();
+-        if prof { eprintln!("[prof] create_output: {:.3}s", t.elapsed().as_secs_f64()); t = std::time::Instant::now(); }
++        if prof { eprintln!("[prof] create_output: {:.3}s", t.elapsed().as_secs_f64()); t = ProfInstant::now(); }
+         let mut outputs = self.combine_outputs(&mut vec![second_pass_output], first_pass_output);
+-        if prof { eprintln!("[prof] combine_outputs: {:.3}s", t.elapsed().as_secs_f64()); t = std::time::Instant::now(); }
++        if prof { eprintln!("[prof] combine_outputs: {:.3}s", t.elapsed().as_secs_f64()); t = ProfInstant::now(); }
+         if let Some(new_df) = self.rm_unwanted_ticks(&mut outputs.df) {
+             outputs.df = new_df;
+         }
+diff --git a/src/parser/src/second_pass/other_netmessages.rs b/src/parser/src/second_pass/other_netmessages.rs
+index a50aaab..4b568e9 100644
+--- a/src/parser/src/second_pass/other_netmessages.rs
++++ b/src/parser/src/second_pass/other_netmessages.rs
+@@ -42,7 +42,7 @@ impl<'a> SecondPassParser<'a> {
+                 paint_wear: item.paintwear,
+                 quest_id: item.questid,
+                 dropreason: item.dropreason,
+-                custom_name: item.customname.clone(),
++                custom_name: item.customnames.first().cloned(),
+                 inventory: item.inventory,
+                 ent_idx: item.entindex,
+                 steamid: None,
+@@ -102,7 +102,7 @@ impl<'a> SecondPassParser<'a> {
+                         paint_wear: item.paintwear,
+                         quest_id: item.questid,
+                         dropreason: item.dropreason,
+-                        custom_name: item.customname.clone(),
++                        custom_name: item.customnames.first().cloned(),
+                         inventory: item.inventory,
+                         ent_idx: item.entindex,
+                         steamid: player.xuid,

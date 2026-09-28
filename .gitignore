@@ -6,3 +6,14 @@ node_modules/
 .env
 .env.*
 *.log
+
+# Этап 2: сборка wasm и демки
+wasm/.vendor/
+wasm/target/
+*.dem
+*.dem.gz
+*.rar
+*.zip
+# Локальные скриншоты (в репозитории — только с живого сайта)
+shots/local-*
+shots/*-local-*

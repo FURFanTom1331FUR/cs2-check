@@ -1,0 +1,27 @@
+[package]
+name = "cs2_demo_wasm"
+version = "0.1.0"
+edition = "2021"
+description = "Обёртка над demoparser2 (LaihoE/demoparser) для разбора демок CS2 в браузере"
+license = "MIT"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+wasm-bindgen = "=0.2.100"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ahash = "0.8.3"
+getrandom = { version = "0.2", features = ["js"] }
+getrandom03 = { package = "getrandom", version = "0.3", features = ["wasm_js"] }
+# Исходники demoparser2 скачивает build.sh (закреплённый коммит + патч для wasm).
+parser = { path = ".vendor/demoparser/src/parser" }
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+debug = false
+panic = "abort"
