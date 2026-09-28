@@ -1,4 +1,4 @@
-// Страница «Демо и матчи»: выбор файла, Web Worker с wasm-парсером, прогресс, история.
+// Страница «Разбор демки»: выбор файла, Web Worker с wasm-парсером, прогресс, история.
 import { h } from "./dom.js";
 import { renderMatch, mapTitle } from "./demo/view.js";
 import { saveMatch, listMatches, deleteMatch } from "./demo/store.js";
@@ -9,7 +9,13 @@ const pgTitle = $("pg-title"), pgBar = $("pg-bar"), pgSub = $("pg-sub"), pgTime 
 
 const ERRORS = {
   csgo: ["Это демка CS:GO", "Поддерживаются только демки Counter-Strike 2 (формат PBDEMS2). Демки CS:GO (HL2DEMO) этот парсер не читает."],
-  archive: ["Это архив, а не демка", "Сначала распакуйте архив (.rar/.zip/.gz) и выберите файл .dem из него."],
+  archive: ["Это архив, а не демка", "Архивы .rar/.zip/.gz/.7z сначала распакуйте и выберите файл .dem из него. Файлы .dem.bz2 (демки матчмейкинга) можно выбирать сразу."],
+  too_large: ["Слишком большой файл", "Архив больше 700 МБ или демка больше 1,5 ГБ — такой файл браузер не осилит."],
+  bad_archive: ["Архив .bz2 повреждён", "Не удалось распаковать .dem.bz2: файл испорчен. Скачайте демку заново."],
+  truncated: ["Архив скачан не полностью", "Файл .dem.bz2 обрезан. Скачайте демку заново и дождитесь окончания загрузки."],
+  download: ["Не удалось скачать демку", "Сервер повторов Valve или помощник не ответил. Проверьте, что помощник запущен, и попробуйте ещё раз."],
+  bad_src: ["Недопустимый источник демки", "Ссылка на разбор ведёт на неразрешённый адрес. Откройте демку со страницы «Мои матчи» или выберите файл вручную."],
+  expired: ["Демка больше недоступна", "Valve хранит записи матчей около месяца — эта демка уже удалена с серверов повторов (или ссылка неверная)."],
   not_demo: ["Это не демка CS2", "Файл не похож на демку Counter-Strike 2. Выберите файл с расширением .dem."],
   empty: ["Пустой файл", "Выбранный файл пустой."],
   corrupted: ["Демка повреждена", "Не удалось разобрать файл: он повреждён, обрезан (не докачан) или записан неподдерживаемой версией игры."],
@@ -42,17 +48,22 @@ function stop() {
   drop.classList.remove("busy");
 }
 
-function start(file) {
-  if (!file) return;
+// src: File (ручная загрузка) или { url, name } (демка с серверов повторов через помощник/прокси).
+function start(src) {
+  if (!src) return;
+  const isUrl = !(src instanceof Blob);
   stop();
   status.replaceChildren();
   result.hidden = true;
-  if (!/\.dem$/i.test(file.name) && !confirm("У файла нет расширения .dem. Всё равно попробовать?")) return;
+  if (!isUrl && !/\.dem(\.bz2)?$/i.test(src.name) && !confirm("У файла нет расширения .dem. Всё равно попробовать?")) return;
   progress.hidden = false;
   drop.classList.add("busy");
   startedAt = performance.now();
-  estimateMs = (file.size / (70 * 1024 * 1024)) * 1000 + 1500; // оценка ~70 МБ/с
-  setProgress("Проверяем файл…", 1, `${file.name} · ${(file.size / 1048576).toFixed(0)} МБ`);
+  parseStart = 0;
+  const bz = isUrl || /\.bz2$/i.test(src.name);
+  // оценка ~70 МБ/с для .dem; для .bz2 размер демки ~в 1.4 раза больше архива
+  estimateMs = isUrl ? 8000 : ((src.size * (bz ? 1.4 : 1)) / (70 * 1024 * 1024)) * 1000 + 1500;
+  setProgress(isUrl ? "Подключаемся…" : "Проверяем файл…", 1, isUrl ? src.name || "" : `${src.name} · ${(src.size / 1048576).toFixed(0)} МБ`);
   timer = setInterval(tick, 250);
   try {
     worker = new Worker(new URL("./demo/worker.js", import.meta.url), { type: "module" });
@@ -66,7 +77,9 @@ function start(file) {
       stage = data.stage;
       if (data.stage === "wasm") setProgress("Загружаем парсер…", 3);
       else if (data.stage === "read") setProgress("Читаем файл…", 3 + (data.done / data.total) * 17);
-      else if (data.stage === "parse") { parseStart = performance.now(); setProgress(`Разбираем демку${data.map ? " · " + mapTitle(data.map) : ""}…`, 20); }
+      else if (data.stage === "unpack") setProgress("Распаковываем .bz2…", 3 + (data.done / data.total) * 27, `${mb(data.done)} из ${mb(data.total)} МБ → ${mb(data.out)} МБ демки`);
+      else if (data.stage === "download") setProgress("Скачиваем демку…", data.total ? 3 + (data.done / data.total) * 37 : null, `${mb(data.done)}${data.total ? " из " + mb(data.total) : ""} МБ · распаковано ${mb(data.out || 0)} МБ`);
+      else if (data.stage === "parse") { parseStart = performance.now(); estimateMs = (data.total / (70 * 1024 * 1024)) * 1000 + 1500; setProgress(`Разбираем демку${data.map ? " · " + mapTitle(data.map) : ""}…`, 20); }
       else if (data.stage === "stats") setProgress("Считаем статистику…", 97);
     } else if (data.type === "done") {
       const { match, stats } = data;
@@ -85,17 +98,19 @@ function start(file) {
     stop();
     showError(stage === "check" || stage === "wasm" ? "wasm_load" : /memory/i.test(e.message || "") ? "memory" : "corrupted", e.message);
   };
-  worker.postMessage({ type: "parse", file });
+  worker.postMessage(isUrl ? { type: "parseUrl", url: src.url, name: src.name } : { type: "parse", file: src });
 }
 
 let parseStart = 0;
+const mb = (b) => (b / 1048576).toFixed(0);
 function tick() {
   const el = performance.now() - startedAt;
   pgTime.textContent = `${(el / 1000).toFixed(0)} с`;
   if (parseStart && pgTitle.textContent.startsWith("Разбираем")) {
     // Точного прогресса парсер не сообщает — показываем оценку по размеру файла.
     const f = Math.min(0.97, (performance.now() - parseStart) / estimateMs);
-    pgBar.style.width = `${20 + f * 75}%`;
+    const from = parseFloat(pgBar.style.width) > 20 ? Math.max(20, parseFloat(pgBar.style.width)) : 20;
+    pgBar.style.width = `${Math.max(from, 20 + f * 75)}%`;
     pgSub.textContent = "Прогресс примерный: парсер не сообщает точный процент.";
   }
 }
@@ -124,6 +139,23 @@ async function refreshRecent() {
       h("button", { type: "button", class: "chip", title: "Удалить из истории", "aria-label": "Удалить", onclick: async () => { await deleteMatch(it.id); refreshRecent(); } }, "✕"),
     );
   }));
+}
+
+// /demo?src=… — автозапуск разбора демки, найденной на странице «Мои матчи».
+// Разрешены только наш прокси и локальный помощник (CSP connect-src всё равно не пустит другие адреса).
+function allowedSrc(raw) {
+  try {
+    const u = new URL(raw, location.origin);
+    if (u.origin === location.origin && u.pathname === "/api/replay") return u.href;
+    if ((u.hostname === "127.0.0.1" || u.hostname === "localhost") && u.port === "27901" && u.protocol === "http:") return u.href;
+  } catch {}
+  return null;
+}
+const qs = new URLSearchParams(location.search);
+if (qs.get("src")) {
+  const url = allowedSrc(qs.get("src"));
+  if (url) start({ url, name: qs.get("name") || "" });
+  else showError("bad_src", null);
 }
 
 const small = matchMedia("(max-width: 760px)").matches || (navigator.deviceMemory && navigator.deviceMemory < 4);

@@ -233,6 +233,83 @@ export function parseTicks(demo, props, ticks) {
     }
 }
 
+function passArray8ToWasm0(arg, malloc) {
+    const ptr = malloc(arg.length * 1, 1) >>> 0;
+    getUint8ArrayMemory0().set(arg, ptr / 1);
+    WASM_VECTOR_LEN = arg.length;
+    return ptr;
+}
+
+const Bz2StreamFinalization = (typeof FinalizationRegistry === 'undefined')
+    ? { register: () => {}, unregister: () => {} }
+    : new FinalizationRegistry(ptr => wasm.__wbg_bz2stream_free(ptr >>> 0, 1));
+/**
+ * Потоковая распаковка .dem.bz2 прямо в память wasm: JS подаёт сжатые куски (из файла или сети),
+ * на выходе — готовый DemoBytes без лишней копии. Поддерживаются многопотоковые bz2.
+ */
+export class Bz2Stream {
+
+    __destroy_into_raw() {
+        const ptr = this.__wbg_ptr;
+        this.__wbg_ptr = 0;
+        Bz2StreamFinalization.unregister(this);
+        return ptr;
+    }
+
+    free() {
+        const ptr = this.__destroy_into_raw();
+        wasm.__wbg_bz2stream_free(ptr, 0);
+    }
+    /**
+     * @returns {number}
+     */
+    len() {
+        const ret = wasm.bz2stream_len(this.__wbg_ptr);
+        return ret >>> 0;
+    }
+    /**
+     * `hint` — ожидаемый размер распакованной демки (резервируется сразу, чтобы не копировать при росте),
+     * `limit` — жёсткий предел распакованного размера в байтах.
+     * @param {number} hint
+     * @param {number} limit
+     */
+    constructor(hint, limit) {
+        const ret = wasm.bz2stream_new(hint, limit);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        this.__wbg_ptr = ret[0] >>> 0;
+        Bz2StreamFinalization.register(this, this.__wbg_ptr, this);
+        return this;
+    }
+    /**
+     * Подаёт следующий сжатый кусок. Возвращает текущий распакованный размер.
+     * @param {Uint8Array} input
+     * @returns {number}
+     */
+    push(input) {
+        const ptr0 = passArray8ToWasm0(input, wasm.__wbindgen_malloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.bz2stream_push(this.__wbg_ptr, ptr0, len0);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return ret[0] >>> 0;
+    }
+    /**
+     * Завершает распаковку. Ошибка, если архив обрезан (не докачан).
+     * @returns {DemoBytes}
+     */
+    finish() {
+        const ptr = this.__destroy_into_raw();
+        const ret = wasm.bz2stream_finish(ptr);
+        if (ret[2]) {
+            throw takeFromExternrefTable0(ret[1]);
+        }
+        return DemoBytes.__wrap(ret[0]);
+    }
+}
+
 const DemoBytesFinalization = (typeof FinalizationRegistry === 'undefined')
     ? { register: () => {}, unregister: () => {} }
     : new FinalizationRegistry(ptr => wasm.__wbg_demobytes_free(ptr >>> 0, 1));
@@ -240,6 +317,14 @@ const DemoBytesFinalization = (typeof FinalizationRegistry === 'undefined')
  * Буфер с байтами демки внутри памяти wasm. JS пишет в него файл кусками (без двойного копирования).
  */
 export class DemoBytes {
+
+    static __wrap(ptr) {
+        ptr = ptr >>> 0;
+        const obj = Object.create(DemoBytes.prototype);
+        obj.__wbg_ptr = ptr;
+        DemoBytesFinalization.register(obj, obj.__wbg_ptr, obj);
+        return obj;
+    }
 
     __destroy_into_raw() {
         const ptr = this.__wbg_ptr;
@@ -256,7 +341,7 @@ export class DemoBytes {
      * @returns {number}
      */
     len() {
-        const ret = wasm.demobytes_len(this.__wbg_ptr);
+        const ret = wasm.bz2stream_len(this.__wbg_ptr);
         return ret >>> 0;
     }
     /**

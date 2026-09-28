@@ -51,10 +51,10 @@ function headerCard(match, fromCache) {
       stat("Длительность", fmtDuration(m.durationSec)),
       stat("Раундов", String(match.rounds.length)),
       stat("Убийств", String(match.kills.length)),
-      stat("Файл", fmtMB(m.fileSize), m.fileName),
+      stat("Файл", fmtMB(m.fileSize), m.compressedSize ? `${m.fileName} · архив ${fmtMB(m.compressedSize)}` : m.fileName),
     ),
-    Math.max(A.score, B.score) < 13
-      ? h("p", { class: "note warn-note" }, "⚠️ Счёт не дошёл до 13 побед: возможно, матч не доигран, это другой режим (например, вингман) или файл демки обрезан.")
+    Math.max(A.score, B.score) < (match.players.length <= 4 ? 9 : 13)
+      ? h("p", { class: "note warn-note" }, `⚠️ Счёт не дошёл до ${match.players.length <= 4 ? 9 : 13} побед: возможно, матч не доигран (сдача голосованием), это другой режим или файл демки обрезан.`)
       : null,
     h("p", { class: "note" }, fromCache
       ? `Открыто из истории (разобрано ${new Date(m.parsedAt).toLocaleString("ru-RU")}).`

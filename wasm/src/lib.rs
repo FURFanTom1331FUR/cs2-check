@@ -34,6 +34,80 @@ impl DemoBytes {
     }
 }
 
+/// Потоковая распаковка .dem.bz2 прямо в память wasm: JS подаёт сжатые куски (из файла или сети),
+/// на выходе — готовый DemoBytes без лишней копии. Поддерживаются многопотоковые bz2.
+#[wasm_bindgen]
+pub struct Bz2Stream {
+    dec: bzip2::Decompress,
+    out: Vec<u8>,
+    limit: usize,
+    ended: bool,
+    streams: u32,
+}
+
+#[wasm_bindgen]
+impl Bz2Stream {
+    /// `hint` — ожидаемый размер распакованной демки (резервируется сразу, чтобы не копировать при росте),
+    /// `limit` — жёсткий предел распакованного размера в байтах.
+    #[wasm_bindgen(constructor)]
+    pub fn new(hint: usize, limit: usize) -> Result<Bz2Stream, JsError> {
+        let mut out = Vec::new();
+        out.try_reserve_exact(hint.min(limit).max(1 << 20))
+            .map_err(|_| JsError::new("OOM: не удалось выделить память под демку"))?;
+        Ok(Bz2Stream { dec: bzip2::Decompress::new(false), out, limit, ended: false, streams: 1 })
+    }
+
+    /// Подаёт следующий сжатый кусок. Возвращает текущий распакованный размер.
+    pub fn push(&mut self, mut input: &[u8]) -> Result<usize, JsError> {
+        while !input.is_empty() {
+            if self.ended {
+                // После конца потока может идти следующий bz2-поток (pbzip2 и т.п.) или нулевой хвост.
+                if input.iter().all(|&b| b == 0) {
+                    return Ok(self.out.len());
+                }
+                self.dec = bzip2::Decompress::new(false);
+                self.ended = false;
+                self.streams += 1;
+            }
+            if self.out.len() == self.out.capacity() {
+                if self.out.len() >= self.limit {
+                    return Err(JsError::new("TOO_LARGE: распакованная демка больше допустимого размера"));
+                }
+                let grow = (self.out.capacity() / 4).max(32 << 20).min(self.limit - self.out.len());
+                self.out
+                    .try_reserve_exact(grow)
+                    .map_err(|_| JsError::new("OOM: не хватило памяти при распаковке"))?;
+            }
+            let before_in = self.dec.total_in();
+            let before_out = self.out.len();
+            let status = self
+                .dec
+                .decompress_vec(input, &mut self.out)
+                .map_err(|e| JsError::new(&format!("BZ2: повреждённый архив ({e})")))?;
+            let used = (self.dec.total_in() - before_in) as usize;
+            input = &input[used..];
+            if let bzip2::Status::StreamEnd = status {
+                self.ended = true;
+            } else if used == 0 && self.out.len() == before_out && self.out.len() < self.out.capacity() {
+                return Err(JsError::new("BZ2: распаковка остановилась"));
+            }
+        }
+        Ok(self.out.len())
+    }
+
+    pub fn len(&self) -> usize {
+        self.out.len()
+    }
+
+    /// Завершает распаковку. Ошибка, если архив обрезан (не докачан).
+    pub fn finish(self) -> Result<DemoBytes, JsError> {
+        if !self.ended {
+            return Err(JsError::new("TRUNCATED: архив .bz2 обрезан — файл скачан не полностью"));
+        }
+        Ok(DemoBytes { data: self.out })
+    }
+}
+
 fn inputs<'a>(
     huf: &'a Vec<(u8, u8)>,
     events: Vec<String>,

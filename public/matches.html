@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Мои матчи CS2 — CS2 Check</title>
+  <meta name="description" content="Автоматический поиск ваших последних матчей CS2 (Premier, соревновательный, напарники) по коду аутентификации и коду матча.">
+  <meta name="theme-color" content="#0b0e14">
+  <meta name="referrer" content="no-referrer">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/style.css">
+  <script type="module" src="/js/matches-page.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="CS2 Check — на главную">
+      <img src="/favicon.svg" alt="" width="28" height="28">
+      <span>CS2<b>Check</b></span>
+    </a>
+    <nav class="nav" aria-label="Разделы">
+      <a class="nav-item" href="/">Проверка игрока</a>
+      <a class="nav-item active" href="/matches" aria-current="page">Мои матчи</a>
+      <a class="nav-item" href="/demo">Разбор демки</a>
+      <span class="nav-item soon" title="Появится на следующих этапах">2D-реплей<small>скоро</small></span>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <section class="hero">
+      <h1>Мои матчи CS2</h1>
+      <p class="lead">Введите профиль, код аутентификации и код последнего матча — сайт сам найдёт ваши новые официальные матчи (Premier, соревновательный, напарники). Демку можно разобрать здесь же, а ручная загрузка файла по-прежнему работает на странице <a href="/demo">«Разбор демки»</a>.</p>
+
+      <form id="mform" class="mform card" autocomplete="off" novalidate>
+        <label class="field">
+          <span>Профиль Steam</span>
+          <input id="q" name="q" type="text" inputmode="url" spellcheck="false" maxlength="200" placeholder="https://steamcommunity.com/id/… или 7656119…" required>
+        </label>
+        <label class="field">
+          <span>Код аутентификации игры</span>
+          <span class="pw">
+            <input id="auth" name="auth" type="password" spellcheck="false" maxlength="20" placeholder="XXXX-XXXXX-XXXX" required autocomplete="off">
+            <button type="button" id="auth-toggle" class="chip" aria-label="Показать код">👁</button>
+          </span>
+        </label>
+        <label class="field">
+          <span>Код последнего известного матча</span>
+          <input id="known" name="known" type="text" spellcheck="false" maxlength="120" placeholder="CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx" required>
+        </label>
+        <div class="mform-row">
+          <label class="check"><input id="remember" type="checkbox" checked> Запомнить на этом устройстве</label>
+          <button id="go" class="btn" type="submit">Найти матчи</button>
+        </div>
+        <p class="note">🔒 Коды хранятся только в этом браузере (localStorage). Код аутентификации уходит лишь на наш сервер для одного запроса к Steam и нигде не сохраняется и не записывается в логи. Он даёт доступ только к истории матчей, а не к аккаунту. Отозвать его можно на той же странице Steam.</p>
+      </form>
+
+      <details class="help card">
+        <summary>Где взять коды?</summary>
+        <ol>
+          <li>Откройте страницу Steam <a href="https://help.steampowered.com/ru/wizard/HelpWithGameIssue/?appid=730&amp;issueid=128" target="_blank" rel="noopener">«Доступ к истории матчей CS2»</a> (нужно войти в Steam).</li>
+          <li>Нажмите «Создать код аутентификации» — появится код вида <code>AAAA-AAAAA-AAAA</code>. Это и есть <b>код аутентификации игры</b>.</li>
+          <li>Ниже на той же странице есть <b>код последнего матча</b> <code>CSGO-…</code>. Ещё его можно взять в CS2: «Смотреть» → «Ваши матчи» → выбрать матч → «Поделиться» (копировать код).</li>
+          <li>Вставьте оба кода сюда. После первого поиска сайт запомнит самый новый код, и в следующий раз нужно будет просто нажать «Найти матчи».</li>
+        </ol>
+        <p class="note">Код матча — это не демка, а «адрес» матча у Valve. Сами записи (демки) хранятся на серверах Valve около месяца.</p>
+      </details>
+    </section>
+
+    <section id="status" class="status" aria-live="polite"></section>
+    <section id="player" class="mplayer" hidden></section>
+    <section id="list" class="mlist" hidden></section>
+
+    <section id="helper" class="card helper-box">
+      <h2>Демки матчей</h2>
+      <p>Код матча сам по себе не содержит ссылки на демку — её выдаёт только игровой координатор CS2 авторизованному клиенту Steam. Поэтому для автоматической загрузки нужен небольшой <b>помощник на вашем ПК</b> (открытый код, папка <code>helper/</code> в репозитории). Без него демку можно скачать в CS2 («Смотреть» → «Ваши матчи» → загрузить) и выбрать файл на странице <a href="/demo">«Разбор демки»</a> — теперь подходят и <code>.dem</code>, и <code>.dem.bz2</code>.</p>
+      <div class="helper-row">
+        <button id="helper-check" type="button" class="chip">Проверить помощника</button>
+        <span id="helper-state" class="muted">Помощник не проверялся.</span>
+      </div>
+      <details>
+        <summary>Как запустить помощника</summary>
+        <ol>
+          <li>Установите <a href="https://nodejs.org/ru" target="_blank" rel="noopener">Node.js</a> 20 или новее.</li>
+          <li>Скачайте репозиторий (<a href="https://github.com/FURFanTom1331FUR/cs2-check" target="_blank" rel="noopener">GitHub</a> → Code → Download ZIP) и распакуйте.</li>
+          <li>В папке <code>helper</code> выполните <code>npm install</code>, затем <code>npm start</code>.</li>
+          <li>Держите Steam запущенным (вход в свой аккаунт), а CS2 — закрытой. Нажмите «Проверить помощника».</li>
+        </ol>
+        <p class="note">Помощник слушает только 127.0.0.1:27901 и отвечает только этому сайту. Подробности и режим с отдельным бот-аккаунтом — в README.</p>
+      </details>
+      <form id="urlform" class="search small" autocomplete="off" novalidate>
+        <label class="sr-only" for="demo-url">Ссылка на демку</label>
+        <input id="demo-url" type="text" spellcheck="false" placeholder="http://replay…valve.net/730/…_….dem.bz2 — если ссылка уже есть">
+        <button type="submit">Разобрать</button>
+      </form>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p>Список матчей берётся из официального Steam Web API (GetNextMatchSharingCode). Сайт не связан с Valve.</p>
+  </footer>
+</body>
+</html>

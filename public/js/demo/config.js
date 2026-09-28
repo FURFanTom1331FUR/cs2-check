@@ -1,6 +1,6 @@
 // Что просим у парсера. Один проход по демке: события + свойства игроков на тике события.
 // Позиции (X/Y/Z, место на карте) сохраняются в модели — пригодятся для 2D-реплея (этап 3).
-export const WASM_VERSION = "1";
+export const WASM_VERSION = "2";
 export const WASM_JS = `/vendor/cs2demo/cs2_demo_wasm.js?v=${WASM_VERSION}`;
 export const WASM_BIN = `/vendor/cs2demo/cs2_demo_wasm_bg.wasm?v=${WASM_VERSION}`;
 
@@ -13,6 +13,11 @@ export const EVENTS = [
 ];
 export const PLAYER_PROPS = ["team_num", "X", "Y", "Z", "team_clan_name", "last_place_name"];
 export const OTHER_PROPS = ["total_rounds_played", "is_warmup_period", "game_time"];
+
+// Пределы для .dem.bz2 (файл или загрузка с серверов повторов Valve через помощник/прокси).
+export const MAX_BZ2_BYTES = 700 * 1024 * 1024;     // сжатый архив
+export const MAX_DEMO_BYTES = 1500 * 1024 * 1024;   // распакованная демка
+export const BZ2_RATIO_HINT = 2.2;                  // ожидаемое отношение .dem / .dem.bz2 (демки жмутся в 1.4–2 раза)
 
 export const TICKRATE = 64; // CS2: 64 тика/с
 

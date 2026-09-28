@@ -18,7 +18,8 @@
     </a>
     <nav class="nav" aria-label="Разделы">
       <a class="nav-item" href="/">Проверка игрока</a>
-      <a class="nav-item active" href="/demo" aria-current="page">Демо и матчи</a>
+      <a class="nav-item" href="/matches">Мои матчи</a>
+      <a class="nav-item active" href="/demo" aria-current="page">Разбор демки</a>
       <span class="nav-item soon" title="Появится на следующем этапе">2D-реплей<small>скоро</small></span>
     </nav>
   </header>
@@ -26,13 +27,13 @@
   <main class="wrap">
     <section class="hero">
       <h1>Разбор демки CS2</h1>
-      <p class="lead">Выберите файл <code>.dem</code> — счёт, раунды и статистика игроков посчитаются прямо в вашем браузере. Демка никуда не загружается.</p>
+      <p class="lead">Выберите файл <code>.dem</code> или <code>.dem.bz2</code> — счёт, раунды и статистика игроков посчитаются прямо в вашем браузере. Демка никуда не загружается.</p>
 
       <label id="drop" class="drop" for="file" tabindex="0">
-        <input id="file" type="file" accept=".dem" hidden>
+        <input id="file" type="file" accept=".dem,.bz2" hidden>
         <span class="drop-ico" aria-hidden="true">📂</span>
-        <span class="drop-title">Перетащите .dem сюда или нажмите, чтобы выбрать</span>
-        <span class="drop-sub">Только демки CS2 (не CS:GO). Архивы .rar/.zip/.gz сначала распакуйте.</span>
+        <span class="drop-title">Перетащите .dem или .dem.bz2 сюда или нажмите, чтобы выбрать</span>
+        <span class="drop-sub">Только демки CS2 (не CS:GO). Демки матчмейкинга .dem.bz2 распаковываются прямо в браузере; .rar/.zip/.gz сначала распакуйте.</span>
       </label>
       <p id="mobile-note" class="mobile-note" hidden>📱 Большая демка (100–500 МБ) требует много памяти — на телефоне разбор может не пройти. Лучше открывать на ПК.</p>
     </section>

@@ -27,9 +27,9 @@
 
 Ссылка на результат сохраняется в адресе (`/?q=…`), её можно отправить другу.
 
-## Демо и матчи (этап 2) — `/demo`
+## Разбор демки (этап 2) — `/demo`
 
-Выберите или перетащите файл `.dem` (демки CS2, обычно 100–500 МБ). Разбор идёт **в браузере**: в Web Worker
+Выберите или перетащите файл `.dem` или `.dem.bz2` (демки CS2, обычно 100–500 МБ; `.bz2` из матчмейкинга распаковывается в браузере, ~10–15 МБ/с). Разбор идёт **в браузере**: в Web Worker
 работает парсер [demoparser2](https://github.com/LaihoE/demoparser) (Rust → WebAssembly), файл читается кусками
 прямо в память wasm. На сервер ничего не отправляется.
 
@@ -48,12 +48,46 @@ HLTV; KAST и флеш-ассисты расходятся максимум на
 
 **Память:** браузеру нужно примерно размер демки + 150–300 МБ; на телефоне большие демки могут не открыться — лучше ПК.
 
+## Мои матчи (автопоиск) — `/matches`
+
+Вместо ручной загрузки можно ввести **профиль Steam**, **код аутентификации игры** (`AAAA-AAAAA-AAAA`) и **код последнего матча**
+(`CSGO-xxxxx-xxxxx-xxxxx-xxxxx-xxxxx`). Оба кода выдаёт Steam на странице
+[«Доступ к истории матчей CS2»](https://help.steampowered.com/ru/wizard/HelpWithGameIssue/?appid=730&issueid=128);
+код матча есть и в CS2: «Смотреть» → «Ваши матчи» → «Поделиться».
+
+- Сервер (`POST /api/matches`) идёт по цепочке `ICSGOPlayers_730/GetNextMatchSharingCode` от известного кода к новым —
+  не больше 20 кодов за запрос (кнопка «Искать дальше» продолжает). Находятся официальные матчи Valve: Premier, соревновательный, напарники.
+- Коды хранятся **только в браузере** (localStorage, можно отключить галочкой или стереть кнопкой «Забыть данные»).
+  Код аутентификации приходит на сервер в теле POST, уходит только в Steam и **не сохраняется и не логируется**; ключ Steam остаётся на сервере.
+- Для каждого матча показываются код, matchId, outcomeId (reservation) и token — они декодируются из кода прямо в браузере (`public/js/sharecode.js`).
+- Ошибки на русском: неверный формат кодов, Steam не принял код аутентификации (403), код матча чужой/неверный (412), новых матчей нет (202 / `n/a`),
+  лимит Steam (429) — при ошибке на середине цепочки уже найденные матчи не теряются.
+
+### Откуда берётся демка
+
+Код матча **не содержит** ссылки на демку. Ссылку (`http://replayNNN.valve.net/730/<matchid>_<reservation>.dem.bz2`) выдаёт только
+игровой координатор CS2 (Game Coordinator) авторизованному клиенту Steam — ни Steam Web API, ни Cloudflare Functions этого не умеют
+(нужно постоянное Steam-соединение). Поэтому есть **локальный помощник** `helper/` (Node.js, слушает только `127.0.0.1:27901`):
+
+| Режим | Как работает | Что нужно |
+|---|---|---|
+| `boiler` (по умолчанию) | [boiler-writter](https://github.com/akiver/boiler-writter) (как в CS Demo Manager) спрашивает координатор через **ваш уже запущенный Steam** | Steam запущен и вы вошли; CS2 закрыта. Паролей не нужно |
+| `bot` | отдельный Steam-аккаунт через `steam-user` + `globaloffensive` | логин/пароль бота (+ shared_secret) в `helper/.env` |
+
+Сервера повторов Valve отдают демки **только по HTTP** (HTTPS не работает) и **без CORS**, поэтому страница на HTTPS не может скачать их напрямую.
+Демку стримит помощник (`GET /demo?url=…`) или, если ссылка уже известна, узкий прокси сайта `GET /api/replay?url=…` (только `replay*.valve.net`,
+до 700 МБ, без кэша; отключается переменной `REPLAY_PROXY=off`). Браузер распаковывает `.bz2` потоково прямо в память wasm
+(`Bz2Stream`, чистый Rust `libbz2-rs-sys`) и разбирает тем же парсером этапа 2. Демки Valve хранятся **около месяца**.
+
+Запуск помощника — см. [`helper/README.md`](helper/README.md).
+
 ## План развития
 
 | Этап | Что | Статус |
 |---|---|---|
 | 1 | Проверка игрока по Steam-профилю | ✅ готово |
 | 2 | Разбор демок (`.dem`) в браузере, статистика матча: счёт, раунды, K/D, ADR, HS%, KAST, клатчи | ✅ готово |
+| 2.5 | Автопоиск своих матчей по кодам Steam, `.dem.bz2`, помощник для ссылок на демки | ✅ готово (скачивание демок — через помощника) |
 | 3 | 2D-реплей матча на радаре карты (позиции уже извлекаются: `parseTicks` в wasm) | планируется |
 | 4 | Упрощённый 3D-просмотр | возможно |
 
@@ -62,13 +96,16 @@ HLTV; KAST и флеш-ассисты расходятся максимум на
 ```
 public/                 статика (отдаётся как есть)
   index.html            проверка игрока (этап 1)
-  demo.html             демо и матчи (этап 2), доступна как /demo
+  demo.html             разбор демки (этап 2), /demo; /demo?src=… — автозапуск по ссылке помощника/прокси
+  matches.html          мои матчи (автопоиск по кодам), /matches
   css/style.css
   js/app.js             точка входа проверки игрока: форма, ?q=, загрузка/ошибки
   js/api.js             клиент к /api/*
   js/dom.js, format.js  безопасный DOM-хелпер, форматирование (ru-RU)
   js/views/player.js    отрисовка отчёта игрока
   js/demo-page.js       страница демок: выбор файла, прогресс, история
+  js/matches-page.js    мои матчи: форма, localStorage, список, помощник
+  js/sharecode.js       декодирование/кодирование кодов матчей CSGO-… (общий для браузера, сервера и помощника)
   js/demo/config.js     какие события/свойства просим у парсера, определение формата файла
   js/demo/worker.js     Web Worker: чтение файла в память wasm, разбор, статистика
   js/demo/model.js      нормализованная модель матча (раунды, убийства, урон, гранаты, бомба + координаты)
@@ -78,19 +115,26 @@ public/                 статика (отдаётся как есть)
   vendor/cs2demo/       собранный wasm-парсер (≈3 МБ, ≈0,8 МБ в gzip) + лицензия demoparser2
   _headers              CSP (с 'wasm-unsafe-eval') и заголовки безопасности
 wasm/                   исходники wasm-обёртки (Rust) и build.sh
-  src/lib.rs            DemoBytes, parseHeader, parseEvents, parseTicks
+  src/lib.rs            DemoBytes, Bz2Stream, parseHeader, parseEvents, parseTicks
   patches/              патч demoparser2 для wasm32 (Instant, новые protobuf)
 functions/api/          Pages Functions (серверная часть)
   profile.js            GET /api/profile?q=…
   health.js             GET /api/health
+  matches.js            POST /api/matches (цепочка кодов матчей)
+  replay.js             GET /api/replay?url=… (узкий прокси к replay*.valve.net)
 src/                    общий серверный код (импортируется функциями, наружу не отдаётся)
   steam/input.js        разбор ссылок / SteamID / vanity
   steam/client.js       обёртка над Steam Web API (таймауты, ошибки)
   steam/profile.js      сборка отчёта
   steam/flags.js        красные флаги
+  steam/sharecodes.js   обход GetNextMatchSharingCode, разбор ошибок Steam
+  replay.js             правило для ссылок на демки Valve
   http.js               JSON-ответы и тексты ошибок
+helper/                 локальный помощник (Node.js): ссылки на демки от координатора CS2 и их загрузка
 tests/                  юнит-тесты (node --test)
 scripts/shots.mjs       скриншоты страницы в headless Chrome
+scripts/demo-test.mjs   разбор демки в headless Chrome (время, память, скриншоты)
+scripts/matches-test.mjs, fake-helper.mjs   проверка «Моих матчей» и полного пути помощник → .bz2 → разбор
 ```
 
 Этап 3 (2D-реплей) добавится рядом: `public/replay.html`, `public/js/replay/*`. Он использует ту же модель матча
@@ -116,6 +160,22 @@ scripts/shots.mjs       скриншоты страницы в headless Chrome
 
 Ошибки: `{ "ok": false, "error": { "code": "...", "message": "..." } }`, коды `bad_input` (400), `not_found` (404), `rate_limited` (429), `steam_unavailable` (502), `not_configured` (500).
 Ответы кэшируются на краю на 2 минуты.
+
+`POST /api/matches` (JSON `{ "q": "<профиль>", "authCode": "AAAA-AAAAA-AAAA", "knownCode": "CSGO-…", "max": 20 }`) →
+
+```json
+{
+  "ok": true,
+  "player": { "steamid": "7656…", "name": "…", "avatar": "…" },
+  "knownCode": "CSGO-…",
+  "matches": [ { "code": "CSGO-…", "matchId": "3230642215713767580", "outcomeId": "3230647599455273103", "token": 55788 } ],
+  "newestCode": "CSGO-…", "finished": true, "hasMore": false, "warning": null
+}
+```
+
+Ошибки: `bad_auth_code_format` / `bad_share_code_format` (400), `bad_auth_code` (403), `bad_known_code` (412), `rate_limited` (429), `steam_unavailable` (502). Ответ не кэшируется.
+
+`GET /api/replay?url=http://replayNNN.valve.net/730/…_….dem.bz2` → поток `.dem.bz2`; ошибки `bad_replay_url` (400), `demo_unavailable` (404), `too_large` (413).
 
 ## Сборка wasm-парсера
 
@@ -170,7 +230,10 @@ npx wrangler pages secret put STEAM_API_KEY --project-name cs2-check
 - Часы CS2 включают время в CS:GO (одна и та же appid 730).
 - Друзья на баны проверяются максимум первые 300.
 - Нет Faceit и Premier-рейтинга.
-- Демки: только CS2 (не CS:GO); архивы нужно распаковать; прогресс разбора примерный (парсер не сообщает процент).
+- Демки: только CS2 (не CS:GO); `.rar/.zip/.gz` нужно распаковать (`.dem.bz2` — нет); прогресс разбора примерный (парсер не сообщает процент).
 - KAST, размены и флеш-ассисты считаются по событиям демки и могут отличаться от HLTV на 1; рейтинга HLTV нет.
 - Точность — ориентировочная (выстрелы/попадания по событиям, без дробовиков).
+- «Мои матчи»: без помощника сайт показывает только коды матчей; ссылку на демку выдаёт лишь координатор CS2. Демки старше ~30 дней Valve удаляет.
+- Помощник обращается к `http://127.0.0.1:27901` со страницы HTTPS: Chrome/Edge/Firefox это разрешают (новый Chrome может спросить разрешение
+  на доступ к локальной сети), Safari может блокировать.
 - Нужна поддержка WebAssembly и module-воркеров (актуальные Chrome, Edge, Firefox, Safari).

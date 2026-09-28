@@ -17,3 +17,9 @@ wasm/target/
 # Локальные скриншоты (в репозитории — только с живого сайта)
 shots/local-*
 shots/*-local-*
+!.env.example
+
+# Помощник: токен бота и временные файлы
+helper/.bot-data/
+*.bz2
+matches.info

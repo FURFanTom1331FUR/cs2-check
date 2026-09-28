@@ -2,5 +2,5 @@
 import { json } from "../../src/http.js";
 
 export function onRequestGet({ env }) {
-  return json({ ok: true, service: "cs2-check", stage: 1, steamKeyConfigured: Boolean(env.STEAM_API_KEY) });
+  return json({ ok: true, service: "cs2-check", stage: "2.5", features: ["profile", "demo", "matches", "replay-proxy"], replayProxy: String(env.REPLAY_PROXY || "").toLowerCase() !== "off", steamKeyConfigured: Boolean(env.STEAM_API_KEY) });
 }
